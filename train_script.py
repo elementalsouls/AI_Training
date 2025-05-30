@@ -1,73 +1,55 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling
 from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments
 import torch
 
-# -------------------------
-# Config
-# -------------------------
-model_id = "esCyanide/ArcNemesis"
-dataset_id = "0dAI/PentestingCommandLogic"
-output_dir = "./arc_output"
-max_length = 512
-batch_size = 2
+# Load your dataset (adjust the path as needed)
+dataset = load_dataset("json", data_files={"train": "dataset_comandos.jsonl"})
 
-# -------------------------
-# Load model & tokenizer
-# -------------------------
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32)
+# Inspect columns: your dataset uses uppercase keys
+print("Columns:", dataset["train"].column_names)
+print("Sample:", dataset["train"][0])
 
-# -------------------------
-# Load dataset
-# -------------------------
-dataset = load_dataset(dataset_id)
+# Initialize tokenizer and model
+model_name = "TheBloke/guanaco-7B-HF"  # replace with your model path/name
+tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16, device_map="auto")
 
-# -------------------------
-# Tokenization logic
-# -------------------------
-def tokenize_function(example):
-    prompt = f"Instruction: {example['INSTRUCTION']}\nResponse: {example['RESPONSE']}"
-    return tokenizer(prompt, truncation=True, padding="max_length", max_length=max_length)
+# Tokenization function adapted for your dataset keys
+def tokenize_function(examples):
+    # Combine input prompt as: Instruction + Response, add labels for training
+    prompts = []
+    for instruction, response in zip(examples["INSTRUCTION"], examples["RESPONSE"]):
+        prompt = f"Instruction: {instruction}\nResponse: {response}"
+        prompts.append(prompt)
+    tokenized = tokenizer(prompts, truncation=True, padding="max_length", max_length=512)
+    # Labels are the same as input ids for causal LM training
+    tokenized["labels"] = tokenized["input_ids"].copy()
+    return tokenized
 
+# Tokenize dataset
 tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=dataset["train"].column_names)
 
-# -------------------------
-# Data collator
-# -------------------------
-data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-
-# -------------------------
-# Training args
-# -------------------------
+# Training arguments (removed evaluation_strategy to avoid version issues)
 training_args = TrainingArguments(
-    output_dir=output_dir,
-    per_device_train_batch_size=batch_size,
-    per_device_eval_batch_size=batch_size,
+    output_dir="./results",
+    per_device_train_batch_size=4,
+    per_device_eval_batch_size=4,
     num_train_epochs=3,
-    evaluation_strategy="epoch",
-    save_strategy="epoch",
-    logging_steps=50,
+    save_steps=500,
     save_total_limit=2,
-    weight_decay=0.01,
-    fp16=torch.cuda.is_available(),
-    report_to="none",
+    logging_dir="./logs",
+    logging_steps=100,
+    # If your transformers version supports evaluation, you can add these back:
+    # evaluation_strategy="steps",
+    # eval_steps=500,
 )
 
-# -------------------------
-# Trainer
-# -------------------------
+# Initialize Trainer
 trainer = Trainer(
     model=model,
     args=training_args,
     train_dataset=tokenized_datasets["train"],
-    eval_dataset=tokenized_datasets.get("validation", tokenized_datasets["train"]),
-    tokenizer=tokenizer,
-    data_collator=data_collator,
 )
 
-# -------------------------
-# Train & save
-# -------------------------
+# Start training
 trainer.train()
-trainer.save_model(output_dir)
-tokenizer.save_pretrained(output_dir)
