@@ -1,3 +1,5 @@
+import transformers
+print(f"Transformers version: {transformers.__version__}")
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments, BitsAndBytesConfig
 from peft import LoraConfig, get_peft_model, TaskType
@@ -10,12 +12,8 @@ dataset = load_dataset("0dAI/PentestingCommandLogic")
 model_name = "esCyanide/ArcNemesis"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-# Define quantization config
-quant_config = BitsAndBytesConfig(
-    load_in_8bit=True,
-)
-
-# Load model with quantization config
+# Use BitsAndBytesConfig for 8-bit quantization
+quant_config = BitsAndBytesConfig(load_in_8bit=True)
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     quantization_config=quant_config,
@@ -32,10 +30,10 @@ lora_config = LoraConfig(
     bias="none"
 )
 
-# Wrap model with LoRA adapters for fine-tuning
+# Wrap model with LoRA adapters
 model = get_peft_model(model, lora_config)
 
-# Tokenization function with padding and label masking (-100 for pad tokens)
+# Tokenization function
 def tokenize_function(examples):
     prompts = [
         f"Instruction: {instr}\nOutput: {resp}"
@@ -44,7 +42,6 @@ def tokenize_function(examples):
     tokenized = tokenizer(prompts, padding="max_length", truncation=True, max_length=512)
     
     labels = tokenized["input_ids"].copy()
-    # Replace padding token ids by -100 so they are ignored by the loss function
     labels = [
         [(token if token != tokenizer.pad_token_id else -100) for token in label_seq]
         for label_seq in labels
@@ -52,15 +49,18 @@ def tokenize_function(examples):
     tokenized["labels"] = labels
     return tokenized
 
-# Tokenize the dataset (remove original columns to keep only tokenized inputs)
+# Tokenize the dataset
 tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=dataset["train"].column_names)
+
+# Debug TrainingArguments source
+print(f"TrainingArguments source: {TrainingArguments.__module__}")
 
 # Training arguments
 training_args = TrainingArguments(
     output_dir="./results",
     per_device_train_batch_size=4,
     per_device_eval_batch_size=4,
-    eval_strategy="no",  # Updated from evaluation_strategy
+    eval_strategy="no",  # Changed from evaluation_strategy
     num_train_epochs=3,
     save_strategy="epoch",
     logging_dir="./logs",
