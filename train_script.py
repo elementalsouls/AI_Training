@@ -1,19 +1,24 @@
 from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments
+from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments, BitsAndBytesConfig
 from peft import LoraConfig, get_peft_model, TaskType
 import torch
 
-# Load dataset from HF Hub (replace with your dataset if local)
+# Load dataset from HF Hub
 dataset = load_dataset("0dAI/PentestingCommandLogic")
 
-# Initialize tokenizer and model (load quantized 8-bit model)
+# Initialize tokenizer and model
 model_name = "esCyanide/ArcNemesis"
-
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
+# Define quantization config
+quant_config = BitsAndBytesConfig(
+    load_in_8bit=True,
+)
+
+# Load model with quantization config
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    load_in_8bit=True,      # requires bitsandbytes installed
+    quantization_config=quant_config,
     device_map="auto"
 )
 
@@ -22,7 +27,7 @@ lora_config = LoraConfig(
     task_type=TaskType.CAUSAL_LM,
     r=8,
     lora_alpha=32,
-    target_modules=["q_proj", "v_proj"],  # adjust if your model's architecture differs
+    target_modules=["q_proj", "v_proj"],
     lora_dropout=0.1,
     bias="none"
 )
@@ -55,12 +60,12 @@ training_args = TrainingArguments(
     output_dir="./results",
     per_device_train_batch_size=4,
     per_device_eval_batch_size=4,
-    evaluation_strategy="no",   # set "steps" if you want eval during training
+    eval_strategy="no",  # Updated from evaluation_strategy
     num_train_epochs=3,
     save_strategy="epoch",
     logging_dir="./logs",
     learning_rate=2e-4,
-    fp16=True,                  # use mixed precision if your GPU supports it
+    fp16=True,
     report_to="none",
     save_total_limit=2,
     load_best_model_at_end=False,
@@ -71,7 +76,7 @@ trainer = Trainer(
     model=model,
     args=training_args,
     train_dataset=tokenized_datasets["train"],
-    eval_dataset=tokenized_datasets.get("validation"),  # may be None if no validation split
+    eval_dataset=tokenized_datasets.get("validation"),
     tokenizer=tokenizer,
 )
 
