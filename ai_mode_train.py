@@ -2,9 +2,27 @@
 # This script fine-tunes the esCyanide/ArcNemesis model (loaded as a PEFT adapter)
 # on the 0dAI/PentestingCommandLogic dataset from Hugging Face Hub.
 
+# --- INSTRUCTIONS BEFORE RUNNING ---
+# 1. Determine your system's CUDA version (e.g., by running `nvcc --version` in your terminal).
+#    If you don't have `nvcc`, you might need to install the NVIDIA CUDA Toolkit or check
+#    `nvidia-smi` output for the CUDA version supported by your driver.
+# 2. Go to the official PyTorch installation page (https://pytorch.org/get-started/locally/).
+# 3. Select your OS (Linux), Package (Pip), Language (Python), and your CUDA version
+#    (match the version found in step 1).
+# 4. Copy the EXACT installation command provided (it will include `--index-url https://download.pytorch.org/whl/cuXXX`, where XXX is your CUDA version).
+# 5. Run that PyTorch installation command in your terminal BEFORE running this script.
+#    Example for CUDA 11.8: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#    Example for CUDA 12.1: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# 6. Ensure your Hugging Face write token (needed for pushing the model later) is set
+#    as an environment variable (`export HUGGING_FACE_HUB_TOKEN="hf_YOUR_WRITE_TOKEN_HERE"`)
+#    or you have logged in using `huggingface-cli login` in your terminal.
+# -----------------------------------
+
+
 # --- 1. Install Required Libraries ---
 # These are the libraries needed for model loading, PEFT, training, and datasets.
 # Using quiet install (-q) and upgrading (-U).
+# TORCH IS NOT INSTALLED HERE - install it separately as per instructions above.
 
 import subprocess
 import sys
@@ -14,6 +32,8 @@ def install(package):
     print(f"Installing {package}...")
     try:
         # Ensure the install command is indented under the function definition
+        # Using --no-deps for bitsandbytes might help prevent it from pulling a torch version,
+        # but --no-deps can sometimes cause other issues. Let's try without for now.
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "-U", package],
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE) # Capture output/errors
         print(f"{package} installed successfully.")
@@ -28,13 +48,10 @@ def install(package):
         sys.exit(f"Exiting due to unexpected installation error for {package}.")
 
 
-# List of packages to install
+# List of packages to install (excluding torch)
 required_packages = [
     "bitsandbytes",
-    # --- UPDATED TRANSFORMERS DEPENDENCY ---
-    # Removing the specific version constraint to get a version that supports Mistral.
-    "transformers",
-    # --- END UPDATED DEPENDENCY ---
+    "transformers", # Will install the latest version compatible with other deps (should support Mistral)
     "peft",
     "accelerate",
     "datasets",
@@ -44,32 +61,37 @@ required_packages = [
     # "trl",      # Optional, if using SFTTrainer instead of Trainer
     # "rouge_score", # Optional, for ROUGE metric (usually for summarization)
     "pandas", # Useful for data inspection
-    "torch" # Ensure torch is installed and has CUDA support if needed
+    # --- TORCH IS REMOVED from this list ---
+    # It MUST be installed manually with the correct CUDA version before running this script.
+    # --- END REMOVED ---
 ]
 
-print("Starting required package installations...")
+print("Starting required package installations (excluding torch)...")
 for package in required_packages:
     install(package)
 print("Package installation complete.")
 
-# Ensure torch is installed correctly with CUDA support if available
-# This check should ideally be after installing 'torch'
+# Ensure torch is available and has CUDA support (CHECK AFTER installing torch manually)
+# This check needs torch to be available in the environment *before* running this script.
 try:
     import torch
     print(f"\nTorch version: {torch.__version__}")
     if torch.cuda.is_available():
         print(f"CUDA is available. Device count: {torch.cuda.device_count()}")
         print(f"Current device: {torch.cuda.current_device()}")
-        # Check CUDA capability if using bfloat16
-        # if torch.cuda.get_device_capability(0)[0] >= 8: # A100, H100 etc.
-        #     print("GPU supports bfloat16.")
-        #     # compute_dtype = getattr(torch, "bfloat16")
+        print("Torch appears to be installed correctly with CUDA support.")
+        # Check CUDA capability if using bfloat16 (Optional, based on your needs)
+        # if torch.cuda.get_device_capability(0)[0] >= 8: # Ampere or newer
+        #      print("GPU supports bfloat16 compute capability.")
+        #      # compute_dtype = getattr(torch, "bfloat16") # You might set this later
     else:
         print("CUDA is not available. Training will be on CPU (likely very slow).")
-        # Decide if you want to exit if no GPU is found
-        # sys.exit("Exiting: CUDA not available, GPU required for training.")
+        print("Please ensure you installed the CUDA version of PyTorch correctly from pytorch.org.")
+        # Decide if you want to exit if no GPU is found - highly recommended for LLM training
+        sys.exit("Exiting: CUDA not available, GPU required for large model training.") # Added exit if no GPU
 except ImportError:
-    print("\nTorch is not installed or not found.")
+    print("\nError: Torch is not installed or not found.")
+    print("Please install PyTorch with CUDA support manually using the command from pytorch.org BEFORE running this script.")
     sys.exit("Exiting: Torch is required but not found.")
 except Exception as e:
     print(f"\nAn error occurred while checking Torch/CUDA: {e}")
@@ -78,7 +100,7 @@ except Exception as e:
 
 # --- 2. Secure Hugging Face Hub Login ---
 # This section handles logging into the Hugging Face Hub.
-# DO NOT hardcode your token directly here. Use one of the secure methods below.
+# DO NOT hardcode your token directly here. Use one of the secure methods mentioned in instructions.
 
 import os
 from huggingface_hub import login, HfFolder
@@ -86,7 +108,8 @@ from huggingface_hub import login, HfFolder
 print("\nAttempting to log into Hugging Face Hub...")
 try:
     # Attempt to log in. This will use the token from env var or CLI config if set.
-    login()
+    # Added add_to_git_credential=False to prevent the interactive prompt in non-interactive scripts
+    login(add_to_git_credential=False)
     print("Successfully logged into Hugging Face Hub.")
     # Verify if a token file exists after login (optional)
     if HfFolder.get_token() is not None:
@@ -128,18 +151,19 @@ print(f"Random Seed: {seed}")
 # We need the base model structure and its quantization details to load the PEFT adapter.
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-import torch
+import torch # Imported and checked in Section 1
 
 # Define BitsAndBytes config (assuming 4-bit QLoRA as in your notebook)
 # Use bfloat16 if your GPU supports it (Ampere architecture or newer, e.g., A100, H100)
-# Otherwise, float16 is standard.
+# Otherwise, float16 is standard. Check your GPU capability if unsure.
 compute_dtype = getattr(torch, "float16")
-# if torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8:
-#      compute_dtype = getattr(torch, "bfloat16")
-#      print("Using bfloat16 for compute_dtype.")
-# else:
-#      print("Using float16 for compute_dtype.")
+if torch.cuda.is_available() and torch.cuda.get_device_capability(0)[0] >= 8:
+     compute_dtype = getattr(torch, "bfloat16")
+     print("Using bfloat16 for compute_dtype.")
+else:
+     print("Using float16 for compute_dtype.") # Default
 
+print(f"Using compute_dtype: {compute_dtype}")
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -169,6 +193,7 @@ except Exception as e:
 # --- 5. Load Tokenizer ---
 # Load the tokenizer corresponding to the base model.
 
+# AutoTokenizer is already imported in Section 4
 print(f"\nLoading tokenizer for: {base_model_name}...")
 try:
     tokenizer = AutoTokenizer.from_pretrained(
@@ -229,6 +254,7 @@ try:
     print(print_number_of_trainable_model_parameters(model_to_train))
 
     # Enable gradient checkpointing to reduce memory usage during fine-tuning
+    # This is done *after* loading the PEFT adapter
     model_to_train.gradient_checkpointing_enable()
     print("Gradient checkpointing enabled on model.")
 
@@ -263,6 +289,7 @@ try:
          print("Available splits:", dataset.keys())
          sys.exit("Exiting due to missing train split in dataset.")
 
+    # Check if necessary columns exist in the training split
     if dataset_input_col not in dataset['train'].column_names or dataset_output_col not in dataset['train'].column_names:
         print(f"\nError: Expected columns '{dataset_input_col}' and '{dataset_output_col}' not found in dataset train split.")
         print("Available columns:", dataset['train'].column_names)
@@ -271,7 +298,10 @@ try:
     print(f"\nDetected input column: '{dataset_input_col}'")
     print(f"Detected output column: '{dataset_output_col}'")
     print("\nFirst sample from train split:")
-    print(dataset['train'][0])
+    if dataset['train'].num_rows > 0:
+         print(dataset['train'][0])
+    else:
+         print("Train split is empty.")
 
 
 except Exception as e:
@@ -300,12 +330,13 @@ def create_prompt_formats(sample, input_col, output_col):
     blurb = f"{INTRO_BLURB}\n\n" # Add newlines after blurb
 
     # Ensure columns exist in the sample dictionary and get their content
+    # Use .get with a default empty string to handle missing keys gracefully
     input_text = sample.get(input_col, "").strip() # Use strip to remove leading/trailing whitespace
     output_text = sample.get(output_col, "").strip()
 
     if not input_text or not output_text:
-        # Return a sample indicating it should be filtered out
-        return {"text": None}
+        # Return a sample indicating it should be filtered out later
+        return {"text": None} # Use None to indicate this sample should be dropped
 
     # Combine parts. The model should learn to generate everything after RESPONSE_KEY
     # INCLUDING the RESPONSE_KEY itself if you want it to predict the format.
@@ -356,6 +387,7 @@ def preprocess_dataset(tokenizer: AutoTokenizer, max_length: int, seed: int, dat
     :param dataset (DatasetDict): The input dataset
     :param input_col (str): Name of the column for input text.
     :param output_col (str): Name of the column for output text.
+    :returns: A DatasetDict with processed splits ('train' and potentially 'eval').
     """
     print("\nPreprocessing dataset...")
 
@@ -365,24 +397,26 @@ def preprocess_dataset(tokenizer: AutoTokenizer, max_length: int, seed: int, dat
     # Note: map can process multiple splits if available in the DatasetDict
     dataset_with_text = dataset.map(create_prompt_partial)
 
-    # Filter out samples where create_prompt_formats returned {"text": None}
+    # Filter out samples where create_prompt_formats returned {"text": None} or empty text
     print("Filtering samples with empty text after formatting...")
-    # Process each split in the DatasetDict
-    for split in list(dataset_with_text.keys()):
+    splits_to_process = list(dataset_with_text.keys())
+    for split in splits_to_process:
          initial_num_rows = dataset_with_text[split].num_rows
+         # Filter keeps samples where the lambda function returns True
          dataset_with_text[split] = dataset_with_text[split].filter(lambda sample: sample.get("text") is not None and len(sample["text"].strip()) > 0)
          filtered_num_rows = dataset_with_text[split].num_rows
          print(f"Filtered out {initial_num_rows - filtered_num_rows} samples with empty text after formatting from {split} split.")
 
     # If after filtering, any split becomes empty, handle that
-    if len(dataset_with_text.keys()) == 0 or ('train' in dataset_with_text and dataset_with_text['train'].num_rows == 0):
+    if 'train' not in dataset_with_text or dataset_with_text['train'].num_rows == 0:
         print("Error: No training samples remaining after formatting and filtering.")
         sys.exit("Exiting due to empty training dataset after preprocessing.")
 
 
     # Get the original column names before tokenization from the splits that still exist
-    # We assume all splits have the same original columns
-    sample_split_key = list(dataset_with_text.keys())[0] # Get the name of the first split
+    # We assume all splits have the same original columns for removal purposes
+    # Take column names from the training split (assuming train split exists and has samples)
+    sample_split_key = 'train' # Assumes train split exists and is not empty
     original_columns_to_remove = [col for col in dataset_with_text[sample_split_key].column_names if col != 'text']
     # Ensure 'text' is also removed after tokenization
     all_columns_to_remove_after_tokenization = original_columns_to_remove + ['text']
@@ -397,28 +431,44 @@ def preprocess_dataset(tokenizer: AutoTokenizer, max_length: int, seed: int, dat
     print("Applying tokenization...")
     _preprocessing_function = partial(preprocess_batch, max_length=max_length, tokenizer=tokenizer)
 
+    # map applies the function to each split. We need to specify the columns to remove
+    # which should be consistent across splits containing those columns.
+    # Let's use the columns determined from the 'train' split.
+    cols_to_remove = [col for col in dataset_with_text['train'].column_names if col != 'text'] + ['text'] # Get cols from train split
+
     processed_dataset = dataset_with_text.map(
         _preprocessing_function,
-        batched=True, # Process in batches for efficiency
-        # Only remove columns that exist in the split currently being processed by map
-        remove_columns=[col for col in all_columns_to_remove_after_tokenization if col in dataset_with_text[sample_split_key].column_names],
+        batched=True,
+        # Remove columns that exist in the *current* split being processed by map.
+        # This requires re-filtering the list based on the split's columns if splits differ.
+        # However, typically original columns are same across splits. Let's simplify:
+        # remove_columns=cols_to_remove # This works if all splits have these columns
+        # A more robust way if splits might have different original cols (less common):
+        remove_columns = [col for col in dataset_with_text['train'].column_names if col != 'text'] + ['text'] # Assuming train has all relevant original cols
+
+
     )
 
     # Filter out samples that have input_ids exceeding max_length for each split
     print(f"Filtering samples exceeding max length ({max_length})...")
-    for split in list(processed_dataset.keys()):
+    splits_after_tokenize = list(processed_dataset.keys())
+    for split in splits_after_tokenize:
          if 'input_ids' in processed_dataset[split].column_names:
              initial_tokenized_rows = processed_dataset[split].num_rows
              processed_dataset[split] = processed_dataset[split].filter(lambda sample: len(sample["input_ids"]) <= max_length)
              filtered_tokenized_rows = processed_dataset[split].num_rows
              print(f"Filtered out {initial_tokenized_rows - filtered_tokenized_rows} samples exceeding max length from {split} split.")
-         else:
-             print(f"Warning: 'input_ids' column not found after tokenization in {split} split. Cannot filter by max_length.")
+             # If a split becomes empty after filtering, remove it from the DatasetDict
+             if processed_dataset[split].num_rows == 0:
+                  print(f"Split '{split}' is empty after filtering and will be removed.")
+                  processed_dataset.pop(split)
 
-    # Shuffle the train split
-    if 'train' in processed_dataset:
-        print("Shuffling train split...")
-        processed_dataset['train'] = processed_dataset['train'].shuffle(seed=seed)
+         else:
+             print(f"Warning: 'input_ids' column not found after tokenization in {split} split.")
+             # Decide how to handle splits without input_ids - maybe remove them too?
+             print(f"Split '{split}' missing 'input_ids' and will be removed.")
+             processed_dataset.pop(split)
+
 
     # Ensure the split names are correct for the Trainer ('train' and 'eval')
     # If the original dataset has 'validation' or 'test', rename it to 'eval'
@@ -430,17 +480,19 @@ def preprocess_dataset(tokenizer: AutoTokenizer, max_length: int, seed: int, dat
         print("Renamed 'test' split to 'eval'.")
 
     # Final check for required splits
-    if 'train' not in processed_dataset:
-        print("Error: 'train' split missing after preprocessing.")
-        sys.exit("Exiting due to missing train split.")
+    if 'train' not in processed_dataset or processed_dataset['train'].num_rows == 0:
+        print("Error: 'train' split missing or empty after preprocessing.")
+        sys.exit("Exiting due to missing or empty train split.")
     # 'eval' split is optional for the Trainer, but useful if available.
 
 
     print("\nProcessed DatasetDict:")
     print(processed_dataset)
-    print("\nExample processed train sample:")
+    print("\nExample processed train sample (decoded):")
     if 'train' in processed_dataset and processed_dataset['train'].num_rows > 0:
-        print(processed_dataset['train'][0])
+        # Decode a sample to verify formatting after tokenization
+        decoded_text = tokenizer.decode(processed_dataset['train'][0]['input_ids'], skip_special_tokens=False)
+        print(decoded_text)
     else:
         print("No samples in train split to display.")
 
@@ -460,150 +512,36 @@ max_length = get_max_length(model_to_train)
 
 # Preprocess the dataset loaded from Hugging Face Hub
 # Pass the input and output column names identified in step 7
+# Ensure dataset, dataset_input_col, and dataset_output_col are defined from step 7
+if 'dataset' not in locals():
+    print("Error: Dataset variable not found. Ensure dataset loading in step 7 ran.")
+    sys.exit("Exiting.")
+if 'dataset_input_col' not in locals() or 'dataset_output_col' not in locals():
+    print("Error: Dataset column names not identified. Ensure step 7 ran successfully.")
+    sys.exit("Exiting.")
+
+
 processed_dataset = preprocess_dataset(tokenizer, max_length, seed, dataset, dataset_input_col, dataset_output_col)
 
 # Assign the train and eval splits to variables expected by the Trainer
 # Assumes processed_dataset now has 'train' and potentially 'eval' keys
 if 'train' in processed_dataset:
     train_dataset = processed_dataset['train']
+    if train_dataset.num_rows == 0:
+        print("Error: train_dataset is empty after preprocessing.")
+        sys.exit("Exiting: train_dataset is empty.")
 else:
     print("Error: 'train' split not found in processed dataset after preprocessing.")
     sys.exit("Exiting: Missing train split.")
 
 if 'eval' in processed_dataset:
     eval_dataset = processed_dataset['eval']
+    if eval_dataset.num_rows == 0:
+         print("Warning: eval_dataset is empty after preprocessing. Evaluation will be skipped.")
+         eval_dataset = None # Set to None if empty
 else:
      print("Warning: 'eval' split not found in processed dataset after preprocessing. Evaluation during training will be skipped.")
-     eval_dataset = None # Set to None if no eval split is available
+     eval_dataset = None # Set to None if missing
 
 
 print("\nDatasets ready for training:")
-print("train_dataset:", train_dataset)
-print("eval_dataset:", eval_dataset)
-
-
-# --- 8. Configure and Initialize the Trainer ---
-# Setup training arguments and the Trainer object.
-
-from transformers import Trainer, TrainingArguments, DataCollatorForLanguageModeling, set_seed
-# set_seed already imported
-
-# Set the random seed for reproducibility
-# set_seed(seed) # Already called above after imports
-# print(f"\nRandom seed set to {seed}.") # Already printed above
-
-# Define your training arguments
-# Review these parameters and adjust them based on your computational resources and desired training duration.
-# You might need to adjust batch size and gradient accumulation based on your GPU memory.
-peft_training_args = TrainingArguments(
-    output_dir=output_dir,             # Directory to save checkpoints and logs
-    warmup_steps=10,                   # Number of steps for linear warmup
-    per_device_train_batch_size=1,     # Batch size per GPU/core (for training)
-    gradient_accumulation_steps=4,     # Accumulate gradients over X batches
-    max_steps=1000,                    # Total number of training steps (adjust as needed, 1000 is short for ~283k samples)
-    # num_train_epochs=1,              # Alternatively, train for epochs (use max_steps OR num_train_epochs)
-    learning_rate=2e-4,                # The initial learning rate
-    optim="paged_adamw_8bit",          # Optimizer (optimized for 8-bit)
-    logging_steps=50,                  # Log every X updates steps
-    logging_dir="./logs",              # Directory for storing logs
-    save_strategy="steps",             # Save checkpoints based on steps
-    save_steps=100,                    # Save checkpoint every X steps
-    # Evaluation strategy: set to "steps" to evaluate periodically, "epoch", or "no"
-    evaluation_strategy="steps" if eval_dataset is not None else "no",
-    eval_steps=100 if eval_dataset is not None else None, # Evaluate every X steps if eval_dataset exists
-    do_eval=True if eval_dataset is not None else False,  # Whether to run evaluation
-    gradient_checkpointing=True,       # Already enabled on the model, keep True here
-    report_to="none",                  # Reporting backend (e.g., "none", "wandb")
-    overwrite_output_dir=True,         # Overwrite the output directory
-    group_by_length=True,              # Group samples by length for efficiency
-    # More parameters to consider:
-    # lr_scheduler_type="cosine",
-    # weight_decay=0.001,
-    # fp16=True, # Enable mixed precision (if using GPU)
-    # logging_first_step=True,
-    # save_total_limit=3,
-    # load_best_model_at_end=True if eval_dataset is not None else False, # Requires load_best_model_at_end=True
-    # metric_for_best_model="eval_loss" if eval_dataset is not None else None,
-    # greater_is_better=False if eval_dataset is not None else None,
-    # dataloader_num_workers=0, # Adjust based on CPU cores and data loading speed
-)
-
-# Create the data collator
-# Data collator for causal language modeling. It handles padding and creating labels.
-data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
-
-print("\nInitializing Trainer...")
-# Initialize the Trainer
-# Pass the tokenizer to the Trainer as well, although the data collator already has it,
-# it can be useful for logging or specific trainer functionalities.
-peft_trainer = Trainer(
-    model=model_to_train,     # Your PEFT-enabled model
-    train_dataset=train_dataset, # Your processed training dataset
-    eval_dataset=eval_dataset,   # Your processed evaluation dataset (or None)
-    args=peft_training_args,  # Your training arguments
-    data_collator=data_collator, # The data collator
-    tokenizer=tokenizer,       # Pass tokenizer to Trainer
-)
-print("Trainer initialized.")
-
-
-# --- 9. Start Training ---
-print("\nStarting training...")
-try:
-    peft_trainer.train()
-    print("\nTraining finished successfully.")
-except Exception as e:
-    print(f"\nAn error occurred during training: {e}")
-    # You might want to save the current state or log more details here
-    # before exiting, depending on how you want to handle errors.
-    sys.exit("Exiting due to training failure.")
-
-
-# --- 10. Save the Final Model ---
-# The Trainer saves checkpoints, but saving the final state explicitly is good practice.
-
-print(f"\nSaving final model checkpoint to {output_dir}/final_checkpoint...")
-try:
-    # The Trainer's save_model method saves the PEFT adapter weights
-    peft_trainer.save_model(f"{output_dir}/final_checkpoint")
-    print("Final model checkpoint saved.")
-except Exception as e:
-    print(f"Error saving final model checkpoint: {e}")
-    # Continue script execution or exit depending on how critical this step is
-    # sys.exit("Exiting due to model saving failure.")
-
-
-# --- 11. Push Model to Hugging Face Hub (Optional) ---
-# This step requires your token to have write permissions.
-
-print("\nAttempting to push the trained PEFT adapter to Hugging Face Hub...")
-print(f"Pushing to repository: {peft_model_id}")
-
-try:
-    # Ensure the PEFT model is on the correct device if pushing directly after training
-    # model_to_train.to('cpu') # Might be needed before pushing depending on setup
-    # model_to_train.eval() # Set to evaluation mode if needed
-
-    # The push_to_hub method on the PEFT model saves the adapter weights and pushes them.
-    # Ensure you have write access to peft_model_id namespace.
-    model_to_train.push_to_hub(peft_model_id) # This pushes only the adapter weights
-    tokenizer.push_to_hub(peft_model_id) # Also push the tokenizer
-
-    print(f"PEFT model adapter and tokenizer successfully pushed to https://huggingface.co/{peft_model_id}")
-
-    # Optional: You might also want to save and push the merged model if you merged it.
-    # This would typically happen after training.
-    # For example, if you merge after training:
-    # merged_model = model_to_train.merge_and_unload()
-    # merged_model_repo_id = f"{peft_model_id}-merged" # Example repo name for merged model
-    # merged_model.push_to_hub(merged_model_repo_id)
-    # tokenizer.push_to_hub(merged_model_repo_id)
-
-
-except Exception as e:
-    print(f"Error pushing model to Hugging Face Hub: {e}")
-    print("Please ensure you are logged in with a token that has WRITE permissions")
-    print(f"for the repository '{peft_model_id}'.")
-    # Do not exit here if pushing is optional
-
-print("\nScript execution finished.")
