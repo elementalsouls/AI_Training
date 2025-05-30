@@ -31,9 +31,10 @@ def install(package):
 # List of packages to install
 required_packages = [
     "bitsandbytes",
-    # Use a specific transformers version that is known to work with the PEFT/ accelerate version
-    # transformers==4.30.2 was in your notebook, let's use that unless issues arise.
-    "transformers==4.30.2",
+    # --- UPDATED TRANSFORMERS DEPENDENCY ---
+    # Removing the specific version constraint to get a version that supports Mistral.
+    "transformers",
+    # --- END UPDATED DEPENDENCY ---
     "peft",
     "accelerate",
     "datasets",
@@ -48,7 +49,6 @@ required_packages = [
 
 print("Starting required package installations...")
 for package in required_packages:
-    # This line *must* be indented under the 'for' loop header
     install(package)
 print("Package installation complete.")
 
@@ -367,74 +367,83 @@ def preprocess_dataset(tokenizer: AutoTokenizer, max_length: int, seed: int, dat
 
     # Filter out samples where create_prompt_formats returned {"text": None}
     print("Filtering samples with empty text after formatting...")
-    initial_num_rows_train = dataset_with_text['train'].num_rows if 'train' in dataset_with_text else 0
-    dataset_with_text = dataset_with_text.filter(lambda sample: sample.get("text") is not None and len(sample["text"].strip()) > 0)
-    filtered_num_rows_train = dataset_with_text['train'].num_rows if 'train' in dataset_with_text else 0
-    print(f"Filtered out {initial_num_rows_train - filtered_num_rows_train} samples with empty text after formatting from train split.")
+    # Process each split in the DatasetDict
+    for split in list(dataset_with_text.keys()):
+         initial_num_rows = dataset_with_text[split].num_rows
+         dataset_with_text[split] = dataset_with_text[split].filter(lambda sample: sample.get("text") is not None and len(sample["text"].strip()) > 0)
+         filtered_num_rows = dataset_with_text[split].num_rows
+         print(f"Filtered out {initial_num_rows - filtered_num_rows} samples with empty text after formatting from {split} split.")
+
+    # If after filtering, any split becomes empty, handle that
+    if len(dataset_with_text.keys()) == 0 or ('train' in dataset_with_text and dataset_with_text['train'].num_rows == 0):
+        print("Error: No training samples remaining after formatting and filtering.")
+        sys.exit("Exiting due to empty training dataset after preprocessing.")
 
 
-    # Get the original column names before tokenization from the split we are processing (assuming 'train')
-    original_columns_to_remove = [col for col in dataset_with_text['train'].column_names if col != 'text']
+    # Get the original column names before tokenization from the splits that still exist
+    # We assume all splits have the same original columns
+    sample_split_key = list(dataset_with_text.keys())[0] # Get the name of the first split
+    original_columns_to_remove = [col for col in dataset_with_text[sample_split_key].column_names if col != 'text']
     # Ensure 'text' is also removed after tokenization
     all_columns_to_remove_after_tokenization = original_columns_to_remove + ['text']
 
-    print(f"Original columns in dataset split: {original_columns_to_remove}")
+
+    print(f"Original columns in dataset splits: {original_columns_to_remove}")
     print(f"Intermediate 'text' column added.")
     print(f"Columns to remove after tokenization map: {all_columns_to_remove_after_tokenization}")
 
 
-    # Apply tokenization
+    # Apply tokenization to each split
     print("Applying tokenization...")
     _preprocessing_function = partial(preprocess_batch, max_length=max_length, tokenizer=tokenizer)
 
-    # Apply tokenization and specify columns to remove.
     processed_dataset = dataset_with_text.map(
         _preprocessing_function,
         batched=True, # Process in batches for efficiency
-        remove_columns=[col for col in all_columns_to_remove_after_tokenization if col in dataset_with_text['train'].column_names], # Only remove columns that exist
+        # Only remove columns that exist in the split currently being processed by map
+        remove_columns=[col for col in all_columns_to_remove_after_tokenization if col in dataset_with_text[sample_split_key].column_names],
     )
 
-    # Filter out samples that have input_ids exceeding max_length
-    # This filter is applied per split in the DatasetDict
+    # Filter out samples that have input_ids exceeding max_length for each split
     print(f"Filtering samples exceeding max length ({max_length})...")
-    if 'input_ids' in processed_dataset['train'].column_names:
-         initial_tokenized_rows_train = processed_dataset['train'].num_rows
-         processed_dataset = processed_dataset.filter(lambda sample: len(sample["input_ids"]) <= max_length)
-         filtered_tokenized_rows_train = processed_dataset['train'].num_rows
-         print(f"Filtered out {initial_tokenized_rows_train - filtered_tokenized_rows_train} samples exceeding max length from train split.")
-    else:
-        print("Warning: 'input_ids' column not found after tokenization. Cannot filter by max_length.")
-
+    for split in list(processed_dataset.keys()):
+         if 'input_ids' in processed_dataset[split].column_names:
+             initial_tokenized_rows = processed_dataset[split].num_rows
+             processed_dataset[split] = processed_dataset[split].filter(lambda sample: len(sample["input_ids"]) <= max_length)
+             filtered_tokenized_rows = processed_dataset[split].num_rows
+             print(f"Filtered out {initial_tokenized_rows - filtered_tokenized_rows} samples exceeding max length from {split} split.")
+         else:
+             print(f"Warning: 'input_ids' column not found after tokenization in {split} split. Cannot filter by max_length.")
 
     # Shuffle the train split
     if 'train' in processed_dataset:
         print("Shuffling train split...")
         processed_dataset['train'] = processed_dataset['train'].shuffle(seed=seed)
 
-    # Split the dataset into train and evaluation sets if only a train split exists
-    # If the original dataset already has train/validation splits, you would handle
-    # this differently, mapping/tokenizing each split. Assuming a single 'train' split for simplicity.
-    if 'train' in processed_dataset and 'validation' not in processed_dataset and 'test' not in processed_dataset:
-        print("Splitting train dataset into train and evaluation splits...")
-        train_eval_split = processed_dataset['train'].train_test_split(test_size=0.1, seed=seed) # Adjust test_size as needed
-        processed_dataset['train'] = train_eval_split['train']
-        processed_dataset['eval'] = train_eval_split['test'] # Use 'eval' for evaluation split name
-        print("Dataset split into 'train' and 'eval'.")
-    elif 'train' in processed_dataset and ('validation' in processed_dataset or 'test' in processed_dataset):
-         print("Dataset already has multiple splits (train, validation/test). Will use existing splits.")
-         # Rename 'validation' or 'test' to 'eval' if your trainer expects 'eval'
-         if 'validation' in processed_dataset and 'eval' not in processed_dataset:
-             processed_dataset['eval'] = processed_dataset.pop('validation')
-             print("Renamed 'validation' split to 'eval'.")
-         elif 'test' in processed_dataset and 'eval' not in processed_dataset:
-             processed_dataset['eval'] = processed_dataset.pop('test')
-             print("Renamed 'test' split to 'eval'.")
-         # Ensure the split names are correct for the Trainer
+    # Ensure the split names are correct for the Trainer ('train' and 'eval')
+    # If the original dataset has 'validation' or 'test', rename it to 'eval'
+    if 'validation' in processed_dataset and 'eval' not in processed_dataset:
+        processed_dataset['eval'] = processed_dataset.pop('validation')
+        print("Renamed 'validation' split to 'eval'.")
+    elif 'test' in processed_dataset and 'eval' not in processed_dataset:
+        processed_dataset['eval'] = processed_dataset.pop('test')
+        print("Renamed 'test' split to 'eval'.")
+
+    # Final check for required splits
+    if 'train' not in processed_dataset:
+        print("Error: 'train' split missing after preprocessing.")
+        sys.exit("Exiting due to missing train split.")
+    # 'eval' split is optional for the Trainer, but useful if available.
+
 
     print("\nProcessed DatasetDict:")
     print(processed_dataset)
     print("\nExample processed train sample:")
-    print(processed_dataset['train'][0])
+    if 'train' in processed_dataset and processed_dataset['train'].num_rows > 0:
+        print(processed_dataset['train'][0])
+    else:
+        print("No samples in train split to display.")
+
 
     return processed_dataset
 
@@ -442,6 +451,11 @@ def preprocess_dataset(tokenizer: AutoTokenizer, max_length: int, seed: int, dat
 
 # Get max length of the model (using model_to_train which is the PEFT model)
 # Ensure model_to_train is defined from step 6.
+# Handle case where model_to_train might not be defined if script failed earlier
+if 'model_to_train' not in locals():
+     print("Error: 'model_to_train' is not defined. Ensure model loading steps ran successfully.")
+     sys.exit("Exiting.")
+
 max_length = get_max_length(model_to_train)
 
 # Preprocess the dataset loaded from Hugging Face Hub
@@ -449,17 +463,17 @@ max_length = get_max_length(model_to_train)
 processed_dataset = preprocess_dataset(tokenizer, max_length, seed, dataset, dataset_input_col, dataset_output_col)
 
 # Assign the train and eval splits to variables expected by the Trainer
-# Assumes processed_dataset now has 'train' and 'eval' keys
+# Assumes processed_dataset now has 'train' and potentially 'eval' keys
 if 'train' in processed_dataset:
     train_dataset = processed_dataset['train']
 else:
-    print("Error: 'train' split not found in processed dataset.")
+    print("Error: 'train' split not found in processed dataset after preprocessing.")
     sys.exit("Exiting: Missing train split.")
 
 if 'eval' in processed_dataset:
     eval_dataset = processed_dataset['eval']
 else:
-     print("Warning: 'eval' split not found in processed dataset. Evaluation during training will be skipped.")
+     print("Warning: 'eval' split not found in processed dataset after preprocessing. Evaluation during training will be skipped.")
      eval_dataset = None # Set to None if no eval split is available
 
 
@@ -472,10 +486,11 @@ print("eval_dataset:", eval_dataset)
 # Setup training arguments and the Trainer object.
 
 from transformers import Trainer, TrainingArguments, DataCollatorForLanguageModeling, set_seed
+# set_seed already imported
 
 # Set the random seed for reproducibility
-set_seed(seed)
-print(f"\nRandom seed set to {seed}.")
+# set_seed(seed) # Already called above after imports
+# print(f"\nRandom seed set to {seed}.") # Already printed above
 
 # Define your training arguments
 # Review these parameters and adjust them based on your computational resources and desired training duration.
@@ -485,7 +500,7 @@ peft_training_args = TrainingArguments(
     warmup_steps=10,                   # Number of steps for linear warmup
     per_device_train_batch_size=1,     # Batch size per GPU/core (for training)
     gradient_accumulation_steps=4,     # Accumulate gradients over X batches
-    max_steps=1000,                    # Total number of training steps (adjust as needed)
+    max_steps=1000,                    # Total number of training steps (adjust as needed, 1000 is short for ~283k samples)
     # num_train_epochs=1,              # Alternatively, train for epochs (use max_steps OR num_train_epochs)
     learning_rate=2e-4,                # The initial learning rate
     optim="paged_adamw_8bit",          # Optimizer (optimized for 8-bit)
@@ -507,9 +522,10 @@ peft_training_args = TrainingArguments(
     # fp16=True, # Enable mixed precision (if using GPU)
     # logging_first_step=True,
     # save_total_limit=3,
-    # load_best_model_at_end=True if eval_dataset is not None else False,
+    # load_best_model_at_end=True if eval_dataset is not None else False, # Requires load_best_model_at_end=True
     # metric_for_best_model="eval_loss" if eval_dataset is not None else None,
     # greater_is_better=False if eval_dataset is not None else None,
+    # dataloader_num_workers=0, # Adjust based on CPU cores and data loading speed
 )
 
 # Create the data collator
@@ -518,12 +534,15 @@ data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
 print("\nInitializing Trainer...")
 # Initialize the Trainer
+# Pass the tokenizer to the Trainer as well, although the data collator already has it,
+# it can be useful for logging or specific trainer functionalities.
 peft_trainer = Trainer(
     model=model_to_train,     # Your PEFT-enabled model
     train_dataset=train_dataset, # Your processed training dataset
     eval_dataset=eval_dataset,   # Your processed evaluation dataset (or None)
     args=peft_training_args,  # Your training arguments
     data_collator=data_collator, # The data collator
+    tokenizer=tokenizer,       # Pass tokenizer to Trainer
 )
 print("Trainer initialized.")
 
@@ -561,7 +580,10 @@ print("\nAttempting to push the trained PEFT adapter to Hugging Face Hub...")
 print(f"Pushing to repository: {peft_model_id}")
 
 try:
-    # Assuming peft_model_id is your desired repository ID (e.g., 'your_username/your_model_name')
+    # Ensure the PEFT model is on the correct device if pushing directly after training
+    # model_to_train.to('cpu') # Might be needed before pushing depending on setup
+    # model_to_train.eval() # Set to evaluation mode if needed
+
     # The push_to_hub method on the PEFT model saves the adapter weights and pushes them.
     # Ensure you have write access to peft_model_id namespace.
     model_to_train.push_to_hub(peft_model_id) # This pushes only the adapter weights
