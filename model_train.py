@@ -61,7 +61,7 @@ def tokenize_function(examples):
         else:
             prompt = f"Instruction: {instr}\nOutput: {resp}"
         prompts.append(prompt)
-    tokenized = tokenizer(prompts, padding=True, truncation=True, max_length=512)
+    tokenized = tokenizer(prompts, padding=True, truncation=True, max_length=256)
     tokenized["labels"] = [[(token if token != tokenizer.pad_token_id else -100) for token in seq] for seq in tokenized["input_ids"]]
     return tokenized
 
@@ -96,4 +96,25 @@ training_args = TrainingArguments(
     logging_steps=50,
     learning_rate=2e-4,
     fp16=True,
-    logging_dir="/workspace/fine-tuning/
+    logging_dir="/workspace/fine-tuning/arc_finetune/logs",
+    save_strategy="steps",
+    save_total_limit=2,
+    eval_strategy="no",
+    gradient_checkpointing=False,
+    logging_strategy="steps",
+    logging_first_step=True,
+    report_to=["tensorboard"]
+)
+
+# Train
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_dataset
+)
+trainer.train()
+
+# Save fine-tuned LoRA model
+model.save_pretrained(output_dir + "/final")
+tokenizer.save_pretrained(output_dir + "/final")
+print("Training complete")
