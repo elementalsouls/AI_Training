@@ -19,7 +19,6 @@ model = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.float16,  # Use FP16 to save memory
 )
 model.config.use_cache = False  # Disable cache for training with gradient checkpointing
-model.enable_input_require_grads()  # Ensure inputs can track gradients
 
 # Set up LoRA configuration
 lora_config = LoraConfig(
@@ -33,7 +32,12 @@ lora_config = LoraConfig(
 
 # Wrap model with LoRA adapters
 model = get_peft_model(model, lora_config)
-model.gradient_checkpointing_enable()  # Enable gradient checkpointing explicitly for LoRA
+model.gradient_checkpointing_enable()  # Enable gradient checkpointing for LoRA
+
+# Ensure LoRA parameters require gradients
+for name, param in model.named_parameters():
+    if "lora" in name:
+        param.requires_grad = True
 
 # Tokenization function
 def tokenize_function(examples):
@@ -41,14 +45,23 @@ def tokenize_function(examples):
         f"Instruction: {instr}\nOutput: {resp}"
         for instr, resp in zip(examples["INSTRUCTION"], examples["RESPONSE"])
     ]
-    tokenized = tokenizer(prompts, padding="max_length", truncation=True, max_length=512)
+    tokenized = tokenizer(
+        prompts,
+        padding="max_length",
+        truncation=True,
+        max_length=512,
+        return_tensors="pt",  # Return PyTorch tensors
+        return_attention_mask=True
+    )
     
-    labels = tokenized["input_ids"].copy()
-    labels = [
-        [(token if token != tokenizer.pad_token_id else -100) for token in label_seq]
-        for label_seq in labels
-    ]
+    # Ensure input_ids and labels are tensors with requires_grad=False
+    tokenized["input_ids"] = tokenized["input_ids"].to(torch.long)
+    tokenized["attention_mask"] = tokenized["attention_mask"].to(torch.long)
+    
+    labels = tokenized["input_ids"].clone()
+    labels[labels == tokenizer.pad_token_id] = -100  # Mask padding tokens for loss
     tokenized["labels"] = labels
+    
     return tokenized
 
 # Tokenize the dataset
