@@ -18,6 +18,8 @@ model = AutoModelForCausalLM.from_pretrained(
     device_map="auto",
     torch_dtype=torch.float16,  # Use FP16 to save memory
 )
+model.config.use_cache = False  # Disable cache for training with gradient checkpointing
+model.enable_input_require_grads()  # Ensure inputs can track gradients
 
 # Set up LoRA configuration
 lora_config = LoraConfig(
@@ -31,6 +33,7 @@ lora_config = LoraConfig(
 
 # Wrap model with LoRA adapters
 model = get_peft_model(model, lora_config)
+model.gradient_checkpointing_enable()  # Enable gradient checkpointing explicitly for LoRA
 
 # Tokenization function
 def tokenize_function(examples):
@@ -81,7 +84,7 @@ trainer = Trainer(
     args=training_args,
     train_dataset=tokenized_datasets["train"],
     eval_dataset=tokenized_datasets.get("validation"),
-    data_collator=data_collator,  # Replaced processing_class
+    data_collator=data_collator,
 )
 
 # Train!
