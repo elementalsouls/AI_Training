@@ -3,17 +3,21 @@ from peft import LoraConfig, get_peft_model, TaskType
 from datasets import load_dataset
 import torch
 
+# Verify CUDA availability
+if not torch.cuda.is_available():
+    print("Error: CUDA is not available. Please install a CUDA-compatible PyTorch version.")
+    exit(1)
+
 # Configuration
 model_name = "/workspace/fine-tuning/arc_finetune/models/base"
 dataset_path = "/workspace/fine-tuning/arc_finetune/dataset/train.jsonl"
 output_dir = "/workspace/fine-tuning/arc_finetune/models/checkpoints"
 
-# Load model with error handling
+# Load model
 try:
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float16,
-        quantization_config=None  # Workaround for transformers 4.22.0 bug
+        torch_dtype=torch.float16
     ).to("cuda")
 except Exception as e:
     print(f"Error loading model: {e}")
@@ -82,10 +86,10 @@ training_args = TrainingArguments(
     save_strategy="steps",
     save_total_limit=2,
     evaluation_strategy="no",
-    gradient_checkpointing=True,  # Reduce memory usage
+    gradient_checkpointing=True,
     logging_strategy="steps",
     logging_first_step=True,
-    report_to=["tensorboard"]  # Enable TensorBoard logging
+    report_to=["tensorboard"]
 )
 
 # Train
