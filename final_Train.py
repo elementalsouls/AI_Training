@@ -99,7 +99,6 @@ training_args = TrainingArguments(
     save_strategy="epoch",
     logging_dir="./logs",
     logging_steps=10,             # Log every 10 steps
-    evaluation_strategy="epoch",  # Evaluate at each epoch end
     learning_rate=2e-4,
     fp16=False,
     optim="adamw_torch",
