@@ -96,26 +96,4 @@ training_args = TrainingArguments(
     logging_steps=50,
     learning_rate=2e-4,
     fp16=True,
-    logging_dir="/workspace/fine-tuning/arc_finetune/logs",
-    save_strategy="steps",
-    save_total_limit=2,
-    eval_strategy="no",
-    gradient_checkpointing=False,  # Disabled temporarily
-    logging_strategy="steps",
-    logging_first_step=True,
-    report_to=["tensorboard"]
-)
-
-# Train
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=tokenized_dataset,
-    label_names=["labels"]  # Fix for label_names warning
-)
-trainer.train()
-
-# Save fine-tuned LoRA model
-model.save_pretrained(output_dir + "/final")
-tokenizer.save_pretrained(output_dir + "/final")
-print("Training complete")
+    logging_dir="/workspace/fine-tuning/
