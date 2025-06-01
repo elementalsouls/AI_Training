@@ -10,7 +10,7 @@ if not torch.cuda.is_available():
 
 # Configuration
 model_name = "/workspace/fine-tuning/arc_finetune/models/base"
-dataset_path = "/workspace/fine-tuning/arc_finetune/dataset/train.jsonl"
+dataset_path = "/workspace/fine-tuning/arc_finetune/dataset/dataset_comandos.jsonl"
 output_dir = "/workspace/fine-tuning/arc_finetune/models/checkpoints"
 
 # Load model
