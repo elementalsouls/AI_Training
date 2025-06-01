@@ -2,6 +2,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments,
 from peft import LoraConfig, get_peft_model, TaskType
 from datasets import load_dataset
 import torch
+import os
 
 # Verify CUDA availability
 if not torch.cuda.is_available():
@@ -12,6 +13,11 @@ if not torch.cuda.is_available():
 model_name = "/workspace/fine-tuning/arc_finetune/models/base"
 dataset_path = "/workspace/fine-tuning/arc_finetune/dataset/dataset_comandos.jsonl"
 output_dir = "/workspace/fine-tuning/arc_finetune/models/checkpoints"
+
+# Verify dataset file exists
+if not os.path.isfile(dataset_path):
+    print(f"Error: Dataset file '{dataset_path}' not found. Please check the path or create the file.")
+    exit(1)
 
 # Load model
 try:
