@@ -90,7 +90,7 @@ print("  input_ids.shape:", sample_batch["input_ids"].shape)
 print("  attention_mask.shape:", sample_batch["attention_mask"].shape)
 print("  labels.shape:", sample_batch["labels"].shape)
 
-# 9) Define TrainingArguments (no gradient_checkpointing here)
+# 9) Define TrainingArguments
 training_args = TrainingArguments(
     output_dir="./results",
     per_device_train_batch_size=2,
@@ -101,6 +101,7 @@ training_args = TrainingArguments(
     logging_dir="./logs",
     learning_rate=2e-4,
     fp16=True,
+    optim="adamw_torch",          # Use PyTorch’s native AdamW for FP16 stability
     report_to="none",
     save_total_limit=2,
     load_best_model_at_end=False,
