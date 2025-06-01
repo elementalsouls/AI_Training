@@ -26,7 +26,7 @@ model = AutoModelForCausalLM.from_pretrained(
     device_map="auto",
     torch_dtype=torch.float16,  # FP16 for memory savings
 )
-model.config.use_cache = False  # required when fine‐tuning
+model.config.use_cache = False  # required when fine-tuning
 
 # 3) Apply LoRA
 lora_config = LoraConfig(
@@ -39,9 +39,7 @@ lora_config = LoraConfig(
 )
 model = get_peft_model(model, lora_config)
 
-# 4) (Remove any manual gradient_checkpointing_enable() call)
-#    — we will not use gradient_checkpointing here, because it was
-#      preventing gradients from flowing into the LoRA weights.
+# 4) (No gradient_checkpointing_enable() call here)
 
 # 5) Print trainable parameters to confirm LoRA adapters show up
 print("\n––– Trainable parameters (LoRA weights) –––")
@@ -78,7 +76,7 @@ tokenized_datasets = dataset.map(
     remove_columns=dataset["train"].column_names,
 )
 
-# 8) Sanity‐check one batch before training
+# 8) Sanity-check one batch before training
 sample_loader = DataLoader(
     tokenized_datasets["train"],
     batch_size=2,
@@ -92,13 +90,12 @@ print("  input_ids.shape:", sample_batch["input_ids"].shape)
 print("  attention_mask.shape:", sample_batch["attention_mask"].shape)
 print("  labels.shape:", sample_batch["labels"].shape)
 
-# 9) Define TrainingArguments (NO gradient_checkpointing here)
+# 9) Define TrainingArguments (no gradient_checkpointing here)
 training_args = TrainingArguments(
     output_dir="./results",
     per_device_train_batch_size=2,
     per_device_eval_batch_size=2,
     gradient_accumulation_steps=4,
-    # gradient_checkpointing=False  ← default is False, so we omit it explicitly
     num_train_epochs=3,
     save_strategy="epoch",
     logging_dir="./logs",
@@ -112,7 +109,7 @@ training_args = TrainingArguments(
 # 10) Use default_data_collator (so “labels” pass through untouched)
 data_collator = default_data_collator
 
-# 11) Initialize Trainer (no label_names argument, since 4.52.4 doesn’t support it)
+# 11) Initialize Trainer (no label_names argument)
 trainer = Trainer(
     model=model,
     args=training_args,
