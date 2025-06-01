@@ -78,6 +78,14 @@ lora_config = LoraConfig(
 )
 model = get_peft_model(model, lora_config)
 
+# Ensure LoRA parameters require gradients
+for name, param in model.named_parameters():
+    if "lora" in name:
+        param.requires_grad = True
+
+# Enable training mode
+model.train()
+
 # Training arguments
 training_args = TrainingArguments(
     output_dir=output_dir,
@@ -91,15 +99,20 @@ training_args = TrainingArguments(
     logging_dir="/workspace/fine-tuning/arc_finetune/logs",
     save_strategy="steps",
     save_total_limit=2,
-    eval_strategy="no",  # Changed from evaluation_strategy
-    gradient_checkpointing=True,
+    eval_strategy="no",
+    gradient_checkpointing=False,  # Disabled temporarily
     logging_strategy="steps",
     logging_first_step=True,
     report_to=["tensorboard"]
 )
 
 # Train
-trainer = Trainer(model=model, args=training_args, train_dataset=tokenized_dataset)
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=tokenized_dataset,
+    label_names=["labels"]  # Fix for label_names warning
+)
 trainer.train()
 
 # Save fine-tuned LoRA model
