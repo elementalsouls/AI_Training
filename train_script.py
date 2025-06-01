@@ -9,7 +9,7 @@ import torch
 dataset = load_dataset("0dAI/PentestingCommandLogic")
 
 # Initialize tokenizer and model
-model_name = "esCyanide/ArcNemesis"
+model_name = "teknium/OpenHermes-2.5-Mistral-7B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 # Use BitsAndBytesConfig for 8-bit quantization
