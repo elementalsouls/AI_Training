@@ -1,109 +1,78 @@
-import transformers
-print(f"Transformers version: {transformers.__version__}")
-
 import torch
 from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     Trainer,
-    TrainingArguments
+    TrainingArguments,
 )
 from peft import LoraConfig, get_peft_model, TaskType
 
 # Load dataset
 dataset = load_dataset("0dAI/PentestingCommandLogic")
 
-# Model name
+# Load tokenizer
 model_name = "teknium/OpenHermes-2.5-Mistral-7B"
-
-# Load tokenizer and set pad token if missing
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
+tokenizer.pad_token = tokenizer.eos_token  # Set pad token
 
-# Load model with fp16 and automatic device placement
+# Load model with max memory constraints and 8-bit precision
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
-    torch_dtype=torch.float16,
+    load_in_8bit=True,  # This is CRITICAL
     device_map="auto"
 )
 
-# Resize token embeddings if needed (for added pad token)
-model.resize_token_embeddings(len(tokenizer))
-
-# Enable gradient checkpointing to reduce memory usage
+# Enable gradient checkpointing
 model.gradient_checkpointing_enable()
 
-# LoRA configuration
+# LoRA setup
 lora_config = LoraConfig(
-    task_type=TaskType.CAUSAL_LM,
-    r=8,
-    lora_alpha=32,
-    target_modules=["q_proj", "v_proj"],
+    r=4,                     # Reduce rank
+    lora_alpha=16,           # Lower alpha
     lora_dropout=0.1,
-    bias="none"
+    bias="none",
+    task_type=TaskType.CAUSAL_LM,
+    target_modules=["q_proj", "v_proj"]
 )
-
-# Apply LoRA
 model = get_peft_model(model, lora_config)
 
 # Tokenization function
-def tokenize_function(examples):
-    prompts = [
-        f"Instruction: {instr}\nOutput: {resp}"
-        for instr, resp in zip(examples["INSTRUCTION"], examples["RESPONSE"])
+def tokenize(example):
+    prompt = f"Instruction: {example['INSTRUCTION']}\nOutput: {example['RESPONSE']}"
+    tokens = tokenizer(prompt, truncation=True, padding="max_length", max_length=128)
+    tokens["labels"] = [
+        (token if token != tokenizer.pad_token_id else -100) for token in tokens["input_ids"]
     ]
-    tokenized = tokenizer(
-        prompts,
-        padding="max_length",
-        truncation=True,
-        max_length=256,
-        return_tensors="pt"
-    )
-    input_ids = tokenized["input_ids"]
-    attention_mask = tokenized["attention_mask"]
+    return tokens
 
-    # Create labels with padding token replaced by -100
-    labels = input_ids.clone()
-    labels[labels == tokenizer.pad_token_id] = -100
+# Tokenize dataset
+tokenized = dataset.map(tokenize, remove_columns=dataset["train"].column_names)
 
-    return {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "labels": labels
-    }
-
-# Tokenize the dataset
-tokenized_datasets = dataset.map(
-    tokenize_function,
-    batched=True,
-    remove_columns=dataset["train"].column_names
-)
-
-# Training arguments
+# Training arguments (very light)
 training_args = TrainingArguments(
     output_dir="./results",
     per_device_train_batch_size=1,
-    gradient_accumulation_steps=4,
+    gradient_accumulation_steps=8,
     num_train_epochs=3,
     save_strategy="epoch",
     logging_dir="./logs",
-    learning_rate=2e-4,
+    learning_rate=5e-5,
     fp16=True,
-    report_to="none",
-    save_total_limit=2,
-    load_best_model_at_end=False
+    report_to="none"
 )
 
-# Initialize Trainer
+# Trainer
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=tokenized_datasets["train"],
-    eval_dataset=tokenized_datasets.get("validation"),
+    train_dataset=tokenized["train"],
     tokenizer=tokenizer
 )
 
-# Start training
+# Set memory fragmentation workaround
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+# Train
 trainer.train()
