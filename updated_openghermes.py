@@ -7,41 +7,51 @@ from transformers import (
     AutoModelForCausalLM,
     Trainer,
     TrainingArguments,
-    default_data_collator
+    default_data_collator,
 )
 from peft import LoraConfig, get_peft_model, TaskType
 import torch
+from torch.utils.data import DataLoader
 
-# Load dataset from Hugging Face Hub
+# Load dataset
 dataset = load_dataset("0dAI/PentestingCommandLogic")
 
-# Initialize tokenizer and model
+# Model name
 model_name = "teknium/OpenHermes-2.5-Mistral-7B"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-tokenizer.pad_token = tokenizer.eos_token  # Set padding token
 
+# Tokenizer
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+tokenizer.pad_token = tokenizer.eos_token
+
+# Load model
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     device_map="auto",
-    torch_dtype=torch.float16,  # Use FP16 for memory savings
+    torch_dtype=torch.float16,
 )
-model.config.use_cache = False  # Needed for gradient checkpointing
+model.config.use_cache = False
 
-# Set up LoRA configuration
+# LoRA config
 lora_config = LoraConfig(
     task_type=TaskType.CAUSAL_LM,
     r=8,
     lora_alpha=32,
     target_modules=["q_proj", "v_proj"],
     lora_dropout=0.1,
-    bias="none"
+    bias="none",
 )
 
-# Wrap model with LoRA adapters
+# Apply LoRA
 model = get_peft_model(model, lora_config)
-model.gradient_checkpointing_enable()  # Enable checkpointing for memory efficiency
+model.gradient_checkpointing_enable()
 
-# Tokenization function (returns regular Python lists, NOT tensors)
+# Debug: ensure LoRA layers are trainable
+print("\nTrainable parameters after PEFT wrapping:")
+for name, param in model.named_parameters():
+    if param.requires_grad:
+        print(f" - {name}")
+
+# Tokenization function
 def tokenize_function(examples):
     prompts = [
         f"Instruction: {instr}\nOutput: {resp}"
@@ -52,33 +62,38 @@ def tokenize_function(examples):
         padding="max_length",
         truncation=True,
         max_length=512,
-        return_attention_mask=True
+        return_attention_mask=True,
     )
+
+    # Create labels with padding masked
     labels = [
-        [-100 if token == tokenizer.pad_token_id else token for token in input_ids]
-        for input_ids in tokenized["input_ids"]
+        [-100 if token == tokenizer.pad_token_id else token for token in ids]
+        for ids in tokenized["input_ids"]
     ]
     tokenized["labels"] = labels
     return tokenized
 
-# Tokenize the dataset
+# Tokenize dataset
 tokenized_datasets = dataset.map(
     tokenize_function,
     batched=True,
     remove_columns=dataset["train"].column_names
 )
 
-# Debug source of TrainingArguments
-print(f"TrainingArguments source: {TrainingArguments.__module__}")
+# Inspect one batch
+sample_loader = DataLoader(tokenized_datasets["train"], batch_size=2, collate_fn=default_data_collator)
+sample_batch = next(iter(sample_loader))
+print("\nSample batch keys:", sample_batch.keys())
+print("input_ids shape:", sample_batch["input_ids"].shape)
+print("labels shape:", sample_batch["labels"].shape)
 
-# Define training arguments
+# Training arguments
 training_args = TrainingArguments(
     output_dir="./results",
     per_device_train_batch_size=2,
     per_device_eval_batch_size=2,
     gradient_accumulation_steps=4,
     gradient_checkpointing=True,
-    eval_strategy="no",
     num_train_epochs=3,
     save_strategy="epoch",
     logging_dir="./logs",
@@ -89,16 +104,17 @@ training_args = TrainingArguments(
     load_best_model_at_end=False,
 )
 
-# Use default data collator (does not modify already-prepared labels)
+# Use simple data collator
 data_collator = default_data_collator
 
-# Initialize Trainer
+# Initialize trainer
 trainer = Trainer(
     model=model,
     args=training_args,
     train_dataset=tokenized_datasets["train"],
     eval_dataset=tokenized_datasets.get("validation"),
     data_collator=data_collator,
+    label_names=["labels"],
 )
 
 # Start training
