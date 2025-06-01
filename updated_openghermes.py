@@ -1,24 +1,31 @@
 import transformers
 print(f"Transformers version: {transformers.__version__}")
+
 from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments, DataCollatorForLanguageModeling
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    Trainer,
+    TrainingArguments,
+    default_data_collator
+)
 from peft import LoraConfig, get_peft_model, TaskType
 import torch
 
-# Load dataset from HF Hub
+# Load dataset from Hugging Face Hub
 dataset = load_dataset("0dAI/PentestingCommandLogic")
 
 # Initialize tokenizer and model
 model_name = "teknium/OpenHermes-2.5-Mistral-7B"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-tokenizer.pad_token = tokenizer.eos_token  # Fix for padding token error
+tokenizer.pad_token = tokenizer.eos_token  # Set padding token
 
 model = AutoModelForCausalLM.from_pretrained(
     model_name,
     device_map="auto",
-    torch_dtype=torch.float16,  # Use FP16 to save memory
+    torch_dtype=torch.float16,  # Use FP16 for memory savings
 )
-model.config.use_cache = False  # Disable cache for training with gradient checkpointing
+model.config.use_cache = False  # Needed for gradient checkpointing
 
 # Set up LoRA configuration
 lora_config = LoraConfig(
@@ -32,14 +39,9 @@ lora_config = LoraConfig(
 
 # Wrap model with LoRA adapters
 model = get_peft_model(model, lora_config)
-model.gradient_checkpointing_enable()  # Enable gradient checkpointing for LoRA
+model.gradient_checkpointing_enable()  # Enable checkpointing for memory efficiency
 
-# Ensure LoRA parameters require gradients
-for name, param in model.named_parameters():
-    if "lora" in name:
-        param.requires_grad = True
-
-# Tokenization function
+# Tokenization function (returns regular Python lists, NOT tensors)
 def tokenize_function(examples):
     prompts = [
         f"Instruction: {instr}\nOutput: {resp}"
@@ -50,46 +52,45 @@ def tokenize_function(examples):
         padding="max_length",
         truncation=True,
         max_length=512,
-        return_tensors="pt",  # Return PyTorch tensors
         return_attention_mask=True
     )
-    
-    # Ensure input_ids and labels are tensors with requires_grad=False
-    tokenized["input_ids"] = tokenized["input_ids"].to(torch.long)
-    tokenized["attention_mask"] = tokenized["attention_mask"].to(torch.long)
-    
-    labels = tokenized["input_ids"].clone()
-    labels[labels == tokenizer.pad_token_id] = -100  # Mask padding tokens for loss
+    labels = [
+        [-100 if token == tokenizer.pad_token_id else token for token in input_ids]
+        for input_ids in tokenized["input_ids"]
+    ]
     tokenized["labels"] = labels
-    
     return tokenized
 
 # Tokenize the dataset
-tokenized_datasets = dataset.map(tokenize_function, batched=True, remove_columns=dataset["train"].column_names)
+tokenized_datasets = dataset.map(
+    tokenize_function,
+    batched=True,
+    remove_columns=dataset["train"].column_names
+)
 
-# Debug TrainingArguments source
+# Debug source of TrainingArguments
 print(f"TrainingArguments source: {TrainingArguments.__module__}")
 
-# Training arguments with memory optimizations
+# Define training arguments
 training_args = TrainingArguments(
     output_dir="./results",
-    per_device_train_batch_size=2,  # Reduced for memory
-    per_device_eval_batch_size=2,   # Reduced for memory
-    gradient_accumulation_steps=4,  # Simulate larger batch size
-    gradient_checkpointing=True,    # Save memory
+    per_device_train_batch_size=2,
+    per_device_eval_batch_size=2,
+    gradient_accumulation_steps=4,
+    gradient_checkpointing=True,
     eval_strategy="no",
     num_train_epochs=3,
     save_strategy="epoch",
     logging_dir="./logs",
     learning_rate=2e-4,
-    fp16=True,  # Enabled for GPU
+    fp16=True,
     report_to="none",
     save_total_limit=2,
     load_best_model_at_end=False,
 )
 
-# Data collator for language modeling
-data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+# Use default data collator (does not modify already-prepared labels)
+data_collator = default_data_collator
 
 # Initialize Trainer
 trainer = Trainer(
@@ -100,5 +101,5 @@ trainer = Trainer(
     data_collator=data_collator,
 )
 
-# Train!
+# Start training
 trainer.train()
