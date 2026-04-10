@@ -25,6 +25,8 @@ Options:
   --no-external     Skip external tools (subfinder/amass/assetfinder)
   --threads         Concurrent threads for HTTP probing  (default: 50)
   --timeout         HTTP probe timeout in seconds        (default: 5)
+  --verify-ssl      Enforce strict SSL certificate validation during HTTP probing
+                    (disabled by default so self-signed / expired certs are still probed)
   -v, --verbose     Show debug / info messages
 
 Requirements (pip install):
@@ -401,10 +403,14 @@ def brute_force_subdomains(domain: str, wordlist: list | None = None) -> set:
 # 7. Live HTTP probing
 # ---------------------------------------------------------------------------
 
-def probe_host(host: str, timeout: int) -> dict | None:
+def probe_host(host: str, timeout: int, verify_ssl: bool = False) -> dict | None:
     """
     Probe a hostname over HTTP and HTTPS.
     Returns a dict with status_code, redirect, server header — or None.
+
+    Note: ``verify_ssl=False`` (the default) allows probing hosts with
+    self-signed or expired certificates, which is common during reconnaissance.
+    Set ``verify_ssl=True`` to enforce strict certificate validation.
     """
     for scheme in ("https", "http"):
         url = f"{scheme}://{host}"
@@ -414,7 +420,7 @@ def probe_host(host: str, timeout: int) -> dict | None:
                 timeout=timeout,
                 allow_redirects=True,
                 headers=HEADERS,
-                verify=False,
+                verify=verify_ssl,
             )
             return {
                 "host": host,
@@ -434,12 +440,12 @@ def _extract_title(html: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def probe_all(hosts: set, threads: int = DEFAULT_THREADS, timeout: int = DEFAULT_TIMEOUT) -> list:
+def probe_all(hosts: set, threads: int = DEFAULT_THREADS, timeout: int = DEFAULT_TIMEOUT, verify_ssl: bool = False) -> list:
     """Probe a set of hostnames concurrently. Returns list of live-host dicts."""
     log.info("[Probe] Probing %d hosts …", len(hosts))
     live = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as pool:
-        futures = {pool.submit(probe_host, h, timeout): h for h in hosts}
+        futures = {pool.submit(probe_host, h, timeout, verify_ssl): h for h in hosts}
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
             if result:
@@ -540,6 +546,7 @@ def discover(
     external: bool = True,
     threads: int = DEFAULT_THREADS,
     timeout: int = DEFAULT_TIMEOUT,
+    verify_ssl: bool = False,
 ):
     banner()
     print(f"[*] Seed domain  : {domain}")
@@ -548,9 +555,13 @@ def discover(
     print(f"[*] Output file  : {output_file}")
     print()
 
-    # Suppress insecure HTTPS warnings from requests/urllib3
+    # Suppress insecure HTTPS warnings from requests/urllib3 when not verifying SSL.
+    # This is intentional: during reconnaissance many hosts use self-signed or
+    # expired certificates and should still be discovered.  Users who require
+    # strict validation can pass --verify-ssl on the command line.
     import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    if not verify_ssl:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     session = make_session(timeout)
 
@@ -626,7 +637,7 @@ def discover(
     live = []
     if probe:
         print(f"\n[*] Probing {len(seed_subdomains)} hosts for live HTTP(S) …")
-        live = probe_all(seed_subdomains, threads=threads, timeout=timeout)
+        live = probe_all(seed_subdomains, threads=threads, timeout=timeout, verify_ssl=verify_ssl)
         print_live(live)
 
     # ---- save results -----------------------------------------------------
@@ -665,6 +676,14 @@ def parse_args():
     parser.add_argument("--no-external",    action="store_true",   help="Skip external tools")
     parser.add_argument("--threads",        type=int, default=DEFAULT_THREADS, help="HTTP probe threads")
     parser.add_argument("--timeout",        type=int, default=DEFAULT_TIMEOUT, help="HTTP probe timeout (s)")
+    parser.add_argument(
+        "--verify-ssl",
+        action="store_true",
+        help=(
+            "Enforce strict SSL certificate validation during HTTP probing "
+            "(disabled by default so self-signed / expired certs are still probed)"
+        ),
+    )
     parser.add_argument("-v", "--verbose",  action="store_true",   help="Verbose / debug output")
     return parser.parse_args()
 
@@ -685,4 +704,5 @@ if __name__ == "__main__":
         external=not args.no_external,
         threads=args.threads,
         timeout=args.timeout,
+        verify_ssl=args.verify_ssl,
     )
